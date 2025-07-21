@@ -1,15 +1,18 @@
-from fastapi import FastAPI, HTTPException, Query, Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from dotenv import load_dotenv
 import os
+from models.products.model import ProductCreateModel
+from models.items.model import OrderCreateModel
+
 
 app = FastAPI()
 
-# CORS Middleware (if needed)
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,58 +22,12 @@ app.add_middleware(
 )
 
 # MongoDB configuration
-
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
-
 client = AsyncIOMotorClient(MONGO_URI)
 db = client["ecommerce"]
 products_collection = db["products"]
 orders_collection = db["orders"]
-
-# Utilities
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid objectid")
-        return ObjectId(v)
-
-# Models
-class SizeModel(BaseModel):
-    size: str
-    quantity: int
-
-class ProductCreateModel(BaseModel):
-    name: str
-    price: float
-    sizes: List[SizeModel]
-
-class ProductListModel(BaseModel):
-    id: str
-    name: str
-    price: float
-
-class OrderItemModel(BaseModel):
-    productId: str
-    qty: int
-
-class OrderCreateModel(BaseModel):
-    userId: str
-    items: List[OrderItemModel]
-
-class OrderItemDetailModel(BaseModel):
-    productId: str
-    productName: str
-    qty: int
-
-class OrderResponseModel(BaseModel):
-    id: str
-    items: List[OrderItemDetailModel]
 
 # Routes
 @app.post("/products", status_code=201)
@@ -93,7 +50,11 @@ async def list_products(
     cursor = products_collection.find(query).skip(offset).limit(limit)
     results = []
     async for doc in cursor:
-        results.append({"id": str(doc["_id"]), "name": doc["name"], "price": doc["price"]})
+        results.append({
+            "id": str(doc["_id"]),
+            "name": doc["name"],
+            "price": doc["price"]
+        })
     return {
         "data": results,
         "page": {
@@ -111,12 +72,14 @@ async def create_order(order: OrderCreateModel):
     for item in order_dict["items"]:
         try:
             obj_id = ObjectId(item["productId"])
-            # Check if product exists before inserting
             product = await products_collection.find_one({"_id": obj_id})
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product not found: {item['productId']}")
-            new_items.append({"productId": obj_id, "qty": item["qty"]})
-        except:
+            new_items.append({
+                "productId": obj_id,
+                "qty": item["qty"]
+            })
+        except Exception:
             raise HTTPException(status_code=400, detail="Invalid productId format")
 
     order_to_save = {
@@ -127,23 +90,32 @@ async def create_order(order: OrderCreateModel):
     result = await orders_collection.insert_one(order_to_save)
     return {"id": str(result.inserted_id)}
 
-
-
 @app.get("/orders/{user_id}")
 async def get_orders(user_id: str, limit: int = 10, offset: int = 0):
     query = {"userId": user_id}
     cursor = orders_collection.find(query).skip(offset).limit(limit)
     orders = []
+    
     async for doc in cursor:
         order_items = []
-        for item in doc["items"]:
-            product = await products_collection.find_one({"_id": ObjectId(item["productId"])})
+        for item in doc.get("items", []):
+            try:
+                product = await products_collection.find_one({"_id": item["productId"]})
+                product_name = product["name"] if product else "Unknown"
+            except:
+                product_name = "Unknown"
+
             order_items.append({
-                "productId": item["productId"],
-                "productName": product["name"] if product else "Unknown",
+                "productId": str(item["productId"]),
+                "productName": product_name,
                 "qty": item["qty"]
             })
-        orders.append({"id": str(doc["_id"]), "items": order_items})
+
+        orders.append({
+            "id": str(doc["_id"]),
+            "items": order_items
+        })
+
     return {
         "data": orders,
         "page": {
@@ -156,4 +128,3 @@ async def get_orders(user_id: str, limit: int = 10, offset: int = 0):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=10000)
-
