@@ -6,8 +6,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from dotenv import load_dotenv
 import os
-from models.product.model import ProductCreateModel
-from models.order.model import OrderCreateModel
+from models.products_model import ProductCreateModel
+from models.items_model import OrderCreateModel
 
 
 app = FastAPI()
