@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from dotenv import load_dotenv
 import os
 
 app = FastAPI()
@@ -17,8 +18,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB config
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/HROne")
+# MongoDB configuration
+
+load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI")
+
 client = AsyncIOMotorClient(MONGO_URI)
 db = client["ecommerce"]
 products_collection = db["products"]
@@ -151,4 +155,5 @@ async def get_orders(user_id: str, limit: int = 10, offset: int = 0):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=10000)
+
